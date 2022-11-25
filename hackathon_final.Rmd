@@ -1,0 +1,128 @@
+---
+title: "hackathon_final"
+output: html_notebook
+---
+
+
+```{r 00, include=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, include=TRUE, message=FALSE, warning=FALSE)
+#from session 1 & 2
+library(tidyverse)
+library(udpipe)
+library(flextable)
+library(cowplot)
+library(quanteda)
+library(quanteda.textmodels)
+library(quanteda.textstats)
+library(quanteda.textplots)
+library(syuzhet)  #analyse du sentimeent
+
+# new for session 3
+library(FactoMineR)
+library(factoextra)
+library(igraph)
+library(ggwordcloud)
+library(ggrepel)
+library(udpipe)
+
+library(Rtsne)
+library(tidytext)
+
+#new for session 4
+library(word2vec)
+library(ape)
+
+theme_set(theme_minimal()+
+            theme(plot.title = element_text(size=12)))
+
+t1=Sys.time()
+
+```
+
+```{r 01}
+UD<-readRDS("/Users/troubledmuffin/Downloads/UD.rds")
+
+#on filtre adverbes adjectifs verb et non communs
+updated_vocab <- UD %>%  
+  filter(upos %in% c('NOUN', 'PROPN', "ADJ","VERB")) %>% 
+  mutate(lemma=tolower(lemma))
+
+updated_vocab2<- updated_vocab %>% 
+  rename(word=lemma)%>%
+  group_by(word)%>% 
+  summarise(n=n())
+
+#on reconstitue le texte filtré
+text2<-updated_vocab %>%
+ group_by(doc_id) %>%
+ summarise(description = paste(lemma, collapse = " "))
+
+
+#on vectorise
+set.seed(123456789)
+model <- word2vec(x = text2$description, 
+                  type = "cbow", 
+                  window = 7, 
+                  dim = 200, 
+                  iter = 100,
+                  verbose=10,
+                    threads = 4L
+                  )
+embedding <- as.matrix(model)
+```
+```{r 02}
+test <- data.frame(id = c(), Review = c())
+id <- sample(1:100000, 1)
+print(id)
+text <- readline(prompt = "Enter your review ")
+text <- as.character(text)
+test <- rbind (test, data.frame(id = c(id), Review = c(text)))
+corpus1<-corpus(test, text_field = "Review")
+tks<-tokens(corpus1,remove_punct = TRUE, remove_symbols=TRUE, remove_numbers=TRUE)%>%
+  tokens_remove(stopwords("french"))
+tks1 <-unlist_tokens(tks)
+fr <- udpipe_download_model(language = "french")
+udmodel_french <- udpipe_load_model(file = "french-gsd-ud-2.5-191206.udpipe")
+fini <- udpipe_annotate(udmodel_french, x=test$Review, trace =1000,parallel.cores = 4)
+fini <- as.data.frame(fini)
+saveRDS(fini, "/Users/troubledmuffin/Downloads/fini.rds")
+fin <- readRDS("/Users/troubledmuffin/Downloads/fini.rds")
+
+vocab <- fin %>%  
+  filter(upos %in% c('NOUN', 'PROPN', "ADJ","VERB")) %>% 
+  mutate(lemma=tolower(lemma))
+
+
+#on reconstitue le texte filtré
+text3<-vocab %>%
+ group_by(doc_id) %>%
+ summarise(description = paste(lemma, collapse = " "))
+```
+
+```{r 04}
+#titre<-UD %>%group_by
+x      <- data.frame(doc_id           = text3$doc_id, 
+                     text             = text3$description, 
+                     stringsAsFactors = FALSE)
+x$text <- txt_clean_word2vec(x$text, tolower=TRUE)
+emb1 <- doc2vec(model, x$text,  split = " ",type = "embedding")
+
+
+```
+
+```{r 05}
+## vectorisation des textes
+
+newdoc <- doc2vec(model, "mariage pacs concubinage marier pacser épouser civil famille divorce séparation séparer civil naissance enfant mort décès trépas", type = "embedding")
+newdoc1 <- doc2vec(model, "travail emploi salarié embaucher", type = "embedding")
+foo<-word2vec_similarity(emb1, newdoc)
+emb2<-cbind(foo,x)%>%
+  as.data.frame() %>% arrange(desc(foo))
+emb2 <- mutate(emb2, lifesit = ifelse(foo>=0.4, "YES", "NO"))
+head(emb2)
+foo1<-word2vec_similarity(emb1, newdoc1)
+emb3<-cbind(foo1,x)%>%
+  as.data.frame() %>% arrange(desc(foo))
+emb3 <- mutate(emb3, lifesit = ifelse(foo>=0.4, "YES", "NO"))
+head(emb3)
+```
